@@ -33,7 +33,7 @@ function Canvas({
     startPos: { x: 0, y: 0 },
   });
 
-  // Calculate if responsive sizing is needed
+  // Calculate if responsive sizing is needed and check if canvas is full
   const shouldApplyResponsiveSize = () => {
     if (!flexContainerRef.current) return false;
 
@@ -50,13 +50,15 @@ function Canvas({
     const containerHeight = container.clientHeight - padding * 2;
 
     if (flexStyle.flexDirection === 'column' || flexStyle.flexDirection === 'column-reverse') {
-      // For column: check if cards exceed height
-      const totalHeight = (baseCardHeight + gap) * nonFloatingCards - gap;
-      return totalHeight > containerHeight;
+      // For column: DON'T resize - let flexWrap handle wrapping to new columns
+      // Cards stay original size, naturally wrap when height is exceeded
+      return false;
     } else {
-      // For row: check if cards exceed width
-      const totalWidth = (baseCardWidth + gap) * nonFloatingCards - gap;
-      return totalWidth > containerWidth;
+      // For row: check if cards exceed width, then wrap to new row
+      const cardsPerRow = Math.max(1, Math.floor((containerWidth + gap) / (baseCardWidth + gap)));
+      const numRows = Math.ceil(nonFloatingCards / cardsPerRow);
+      const totalHeight = (baseCardHeight + gap) * numRows - gap;
+      return totalHeight > containerHeight;
     }
   };
 
@@ -103,32 +105,18 @@ function Canvas({
 
     if (nonFloatingCards === 0) return null;
 
-    let newWidth, newHeight;
-    const containerWidth = container.clientWidth - padding * 2;
     const containerHeight = container.clientHeight - padding * 2;
-    const baseCardWidth = parseInt(cardStyle.width) || 150;
     const baseCardHeight = parseInt(cardStyle.height) || 150;
 
-    if (flexStyle.flexDirection === 'column' || flexStyle.flexDirection === 'column-reverse') {
-      // For column direction: cards in vertical grid
-      const cardsPerColumn = Math.max(1, Math.floor((containerHeight + gap) / (baseCardHeight + gap)));
-      const numColumns = Math.ceil(nonFloatingCards / cardsPerColumn);
-      const totalGapWidth = gap * (numColumns - 1);
-      
-      newWidth = Math.max(50, Math.floor((containerWidth - totalGapWidth) / numColumns));
-      newHeight = Math.max(50, baseCardHeight);
-    } else {
-      // For row direction: standard row wrapping
-      const cardsPerRow = Math.max(1, Math.floor((containerWidth + gap) / (baseCardWidth + gap)));
-      const numRows = Math.ceil(nonFloatingCards / cardsPerRow);
-      const totalGapHeight = gap * (numRows - 1);
-      
-      newWidth = Math.max(50, baseCardWidth);
-      newHeight = Math.max(50, Math.floor((containerHeight - totalGapHeight) / numRows));
-    }
+    // Only for row direction - scale height when multiple rows needed
+    const cardsPerRow = Math.max(1, Math.floor((container.clientWidth - padding * 2 + gap) / (parseInt(cardStyle.width) || 150 + gap)));
+    const numRows = Math.ceil(nonFloatingCards / cardsPerRow);
+    const totalGapHeight = gap * (numRows - 1);
+    
+    const newHeight = Math.max(50, Math.floor((containerHeight - totalGapHeight) / numRows));
 
     return {
-      width: `${newWidth}px`,
+      width: `${parseInt(cardStyle.width) || 150}px`,
       height: `${newHeight}px`,
     };
   };
@@ -336,10 +324,19 @@ function Canvas({
         {cards.map((card) => {
           const isSelected = selectedCards.includes(card.id);
           
-          // Use responsive size only if needed, otherwise use original cardStyle
-          const cardSize = card.floating 
-            ? { width: cardStyle.width, height: cardStyle.height }
-            : responsiveSize || { width: cardStyle.width, height: cardStyle.height };
+          // Check if user has set any style overrides
+          const hasStyleOverrides = card.styleOverrides && Object.keys(card.styleOverrides).length > 0;
+          
+          // Determine the card size - respect user overrides completely
+          let cardSize = { width: cardStyle.width, height: cardStyle.height };
+          
+          // Only apply responsive sizing if:
+          // 1. Card is not floating
+          // 2. Responsive size is calculated
+          // 3. User hasn't set any style overrides at all
+          if (!card.floating && responsiveSize && !hasStyleOverrides) {
+            cardSize = responsiveSize;
+          }
 
           const mergedStyle = {
             ...cardStyle,
